@@ -1,7 +1,15 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import logging
 from telegram.ext import ContextTypes
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import database as db
+from config import TIMEZONE
+
+logger = logging.getLogger(__name__)
+
+# Timezone obyektini yaratib olamiz (masalan, Asia/Tashkent)
+LOCAL_TZ = ZoneInfo(TIMEZONE if TIMEZONE else "Asia/Tashkent")
 
 
 def build_repeat_next(task: dict) -> str | None:
@@ -14,7 +22,6 @@ def build_repeat_next(task: dict) -> str | None:
     elif rtype == "weekly":
         return (due + timedelta(weeks=1)).isoformat()
     elif rtype == "monthly":
-        # oddiy yondashuv: 30 kun qo'shamiz
         return (due + timedelta(days=30)).isoformat()
     elif rtype == "custom" and task.get("repeat_interval_days"):
         return (due + timedelta(days=task["repeat_interval_days"])).isoformat()
@@ -23,7 +30,9 @@ def build_repeat_next(task: dict) -> str | None:
 
 async def check_tasks(context: ContextTypes.DEFAULT_TYPE):
     """Har daqiqada ishga tushadi: eslatma va muddat vaqtlarini tekshiradi."""
-    now = datetime.now()
+    # Server vaqti emas, aynan ko'rsatilgan mintaqa (Toshkent) vaqtini olamiz
+    # va bazadagi naive datetime bilan to'g'ri solishtirish uchun tzinfo ni olib tashlaymiz
+    now = datetime.now(LOCAL_TZ).replace(tzinfo=None)
     tasks = db.get_all_active_tasks()
 
     for task in tasks:
@@ -32,7 +41,7 @@ async def check_tasks(context: ContextTypes.DEFAULT_TYPE):
         chat_id = task["user_id"]
 
         # Oldindan eslatma
-        if task["reminder_minutes_before"] and not task["notified_reminder"]:
+        if task.get("reminder_minutes_before") and not task.get("notified_reminder"):
             reminder_time = due - timedelta(minutes=task["reminder_minutes_before"])
             if now >= reminder_time and now < due:
                 try:
@@ -42,14 +51,14 @@ async def check_tasks(context: ContextTypes.DEFAULT_TYPE):
                              f"Muddat: {due.strftime('%d.%m.%Y %H:%M')} "
                              f"({task['reminder_minutes_before']} daqiqadan keyin)",
                     )
-                except Exception:
-                    pass
-                db.update_task(task_id, notified_reminder=1)
+                    db.update_task(task_id, notified_reminder=1)
+                except Exception as e:
+                    logger.error(f"Eslatma yuborishda xato (task_id: {task_id}): {e}")
 
         # Muddat yetganda
-        if now >= due and not task["notified_due"]:
+        if now >= due and not task.get("notified_due"):
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Toʻlash", callback_data=f"complete_{task_id}")]
+                [InlineKeyboardButton("✅ Bajarildi", callback_data=f"complete_{task_id}")]
             ])
             try:
                 await context.bot.send_message(
@@ -57,9 +66,9 @@ async def check_tasks(context: ContextTypes.DEFAULT_TYPE):
                     text=f"🔔 Vazifa vaqti keldi: \"{task['title']}\"",
                     reply_markup=keyboard,
                 )
-            except Exception:
-                pass
-            db.update_task(task_id, notified_due=1)
+                db.update_task(task_id, notified_due=1)
+            except Exception as e:
+                logger.error(f"Vazifa bildirishnomasini yuborishda xato (task_id: {task_id}): {e}")
 
             # Takrorlanuvchi vazifa bo'lsa, keyingisini yaratamiz
             next_due = build_repeat_next(task)
@@ -68,8 +77,8 @@ async def check_tasks(context: ContextTypes.DEFAULT_TYPE):
                     user_id=task["user_id"],
                     title=task["title"],
                     due_datetime=next_due,
-                    reminder_minutes_before=task["reminder_minutes_before"],
-                    repeat_type=task["repeat_type"],
-                    repeat_interval_days=task["repeat_interval_days"],
-                    description=task["description"],
+                    reminder_minutes_before=task.get("reminder_minutes_before", 0),
+                    repeat_type=task.get("repeat_type", "none"),
+                    repeat_interval_days=task.get("repeat_interval_days"),
+                    description=task.get("description", ""),
                 )
