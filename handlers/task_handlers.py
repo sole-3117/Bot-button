@@ -1,6 +1,7 @@
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
+from telegram.error import BadRequest
 import database as db
 from config import REMINDER_OPTIONS, REPEAT_TYPES
 from handlers.start import main_menu_keyboard
@@ -9,12 +10,29 @@ from handlers.start import main_menu_keyboard
 TITLE, DATE, TIME, REMINDER, REPEAT, CUSTOM_INTERVAL = range(6)
 
 
+# ---------- Yordamchi xavfsiz tahrirlash ----------
+
+async def safe_edit_message(query, text: str, reply_markup=None, parse_mode=None):
+    """Xabar mazmuni o'zgarmagan bo'lsa BadRequest xatosini e'tiborsiz qoldiradi."""
+    try:
+        await query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        )
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            pass
+        else:
+            raise exc
+
+
 # ---------- Yangi vazifa yaratish ----------
 
 async def new_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("📝 Vazifa nomini kiriting:")
+    await safe_edit_message(query, "📝 Vazifa nomini kiriting:")
     return TITLE
 
 
@@ -76,7 +94,8 @@ async def receive_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(label, callback_data=f"rep_{key}")]
         for key, label in REPEAT_TYPES.items()
     ]
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "🔁 Takrorlanish turini tanlang:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -90,7 +109,7 @@ async def receive_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["repeat_type"] = repeat_type
 
     if repeat_type == "custom":
-        await query.edit_message_text("🔢 Necha kunda bir marta takrorlansin? (son kiriting):")
+        await safe_edit_message(query, "🔢 Necha kunda bir marta takrorlansin? (son kiriting):")
         return CUSTOM_INTERVAL
 
     return await save_task(update, context)
@@ -130,7 +149,7 @@ async def save_task(update: Update, context: ContextTypes.DEFAULT_TYPE, from_mes
     if from_message:
         await update.message.reply_text(text, reply_markup=main_menu_keyboard())
     else:
-        await update.callback_query.edit_message_text(text, reply_markup=main_menu_keyboard())
+        await safe_edit_message(update.callback_query, text, reply_markup=main_menu_keyboard())
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -151,17 +170,25 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tasks = db.get_user_tasks(user_id, status="active")
 
     if not tasks:
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "📋 Faol vazifalar yoʻq.",
             reply_markup=main_menu_keyboard(),
         )
         return
 
+    await safe_edit_message(
+        query,
+        "📋 *Faol vazifalar roʻyxati:*",
+        reply_markup=main_menu_keyboard(),
+        parse_mode="Markdown",
+    )
+
     for task in tasks:
         due = datetime.fromisoformat(task["due_datetime"])
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Toʻlash", callback_data=f"complete_{task['task_id']}"),
+                InlineKeyboardButton("✅ Bajarildi", callback_data=f"complete_{task['task_id']}"),
                 InlineKeyboardButton("🗑 Oʻchirish", callback_data=f"delete_{task['task_id']}"),
             ]
         ])
@@ -179,7 +206,8 @@ async def list_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tasks = db.get_user_tasks(user_id, status="done")
 
     if not tasks:
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "✅ Bajarilgan vazifalar yoʻq.",
             reply_markup=main_menu_keyboard(),
         )
@@ -190,7 +218,8 @@ async def list_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         due = datetime.fromisoformat(task["due_datetime"])
         lines.append(f"• {task['title']} ({due.strftime('%d.%m.%Y %H:%M')})")
 
-    await query.edit_message_text(
+    await safe_edit_message(
+        query,
         "\n".join(lines),
         reply_markup=main_menu_keyboard(),
         parse_mode="Markdown",
@@ -199,10 +228,10 @@ async def list_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def complete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Vazifa toʻlandi! ✅")
+    await query.answer("Vazifa bajarildi! ✅")
     task_id = int(query.data.split("_")[1])
     db.complete_task(task_id)
-    await query.edit_message_text("✅ Vazifa bajarildi deb belgilandi.")
+    await safe_edit_message(query, "✅ Vazifa bajarildi deb belgilandi.")
 
 
 async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -210,4 +239,4 @@ async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer("Oʻchirildi 🗑")
     task_id = int(query.data.split("_")[1])
     db.delete_task(task_id)
-    await query.edit_message_text("🗑 Vazifa oʻchirildi.")
+    await safe_edit_message(query, "🗑 Vazifa oʻchirildi.")
