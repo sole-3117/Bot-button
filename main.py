@@ -32,6 +32,13 @@ from handlers.task_handlers import (
     REPEAT,
     CUSTOM_INTERVAL,
 )
+from handlers.admin import (
+    backup_command,
+    restore_start,
+    restore_file_received,
+    RESTORE_FILE,
+    admin_cancel,
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -72,6 +79,19 @@ def main():
     app.add_handler(CallbackQueryHandler(list_done, pattern="^list_done$"))
     app.add_handler(CallbackQueryHandler(complete_task_callback, pattern="^complete_"))
     app.add_handler(CallbackQueryHandler(delete_task_callback, pattern="^delete_"))
+
+    # Admin (Backup va Restore) handlerlari
+    app.add_handler(CommandHandler("backup", backup_command))
+
+    restore_conv = ConversationHandler(
+        entry_points=[CommandHandler("restore", restore_start)],
+        states={
+            RESTORE_FILE: [MessageHandler(filters.Document.ALL, restore_file_received)]
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_message=False,
+    )
+    app.add_handler(restore_conv)
 
     # Har daqiqada vazifalarni tekshirish (job_queue)
     app.job_queue.run_repeating(check_tasks, interval=60, first=5)
