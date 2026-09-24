@@ -2,6 +2,7 @@ import os
 from datetime import timezone, timedelta
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "SIZNING_BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")  # Agar bo'lsa PostgreSQL, bo'lmasa SQLite
 DB_PATH = os.getenv("DB_PATH", "rejachi.db")
 ADMIN_IDS = [int(i.strip()) for i in os.getenv("ADMIN_IDS", "123456789").split(",") if i.strip()]
 
