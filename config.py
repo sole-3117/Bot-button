@@ -1,6 +1,7 @@
 import os
 from datetime import timezone, timedelta
 
+DB_PATH = os.getenv("DB_PATH", "rejachi.db")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "SIZNING_BOT_TOKENINGIZ")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
