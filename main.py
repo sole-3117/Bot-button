@@ -3,102 +3,161 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
-    ConversationHandler,
     MessageHandler,
+    ConversationHandler,
     filters,
 )
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN
 import database as db
-from utils.scheduler import check_tasks
-from handlers.start import start, menu_callback
+from handlers.start import start_command
+from handlers.account import (
+    account_command,
+    buy_plan_start,
+    plan_selected,
+    receive_receipt,
+    cancel_payment,
+    admin_payment_decision,
+    SELECT_PLAN,
+    SEND_RECEIPT,
+)
 from handlers.task_handlers import (
     new_task_start,
     receive_title,
-    receive_date,
-    receive_time,
+    receive_description,
+    skip_description,
+    receive_date_callback,
+    receive_date_text,
+    receive_time_callback,
+    receive_time_text,
     receive_reminder,
     receive_repeat,
     receive_custom_interval,
-    cancel,
     list_tasks,
     list_done,
     complete_task_callback,
     delete_task_callback,
+    cancel,
     TITLE,
-    DATE,
-    TIME,
+    DESCRIPTION,
+    DATE_PICK,
+    TIME_PICK,
     REMINDER,
     REPEAT,
     CUSTOM_INTERVAL,
 )
 from handlers.admin import (
+    admin_start,
+    admin_refresh,
+    give_plan_start,
+    receive_target_user,
+    receive_plan_choice,
     backup_command,
     restore_start,
     restore_file_received,
-    RESTORE_FILE,
     admin_cancel,
+    GIVE_PLAN_USER,
+    GIVE_PLAN_CHOOSE,
+    RESTORE_FILE,
 )
+from utils.scheduler import check_tasks
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
-
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN topilmadi. .env faylida BOT_TOKEN ni belgilang.")
-
     db.init_db()
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # /start
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu$"))
+    # Scheduler
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(check_tasks, "interval", minutes=1, args=[app])
+    scheduler.start()
 
-    # Yangi vazifa yaratish (conversation)
-    conv_handler = ConversationHandler(
+    # Yangi vazifa yaratish suhbati
+    task_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_task_start, pattern="^new_task$")],
         states={
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
-            DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date)],
-            TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time)],
+            DESCRIPTION: [
+                CallbackQueryHandler(skip_description, pattern="^skip_desc$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_description),
+            ],
+            DATE_PICK: [
+                CallbackQueryHandler(receive_date_callback, pattern="^date_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date_text),
+            ],
+            TIME_PICK: [
+                CallbackQueryHandler(receive_time_callback, pattern="^time_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time_text),
+            ],
             REMINDER: [CallbackQueryHandler(receive_reminder, pattern="^rem_")],
             REPEAT: [CallbackQueryHandler(receive_repeat, pattern="^rep_")],
             CUSTOM_INTERVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_custom_interval)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
-    app.add_handler(conv_handler)
 
-    # Vazifalar roʻyxati
+    # To'lov va Shaxsiy kabinet suhbati
+    account_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(buy_plan_start, pattern="^buy_plan$")],
+        states={
+            SELECT_PLAN: [
+                CallbackQueryHandler(plan_selected, pattern="^plan_"),
+                CallbackQueryHandler(cancel_payment, pattern="^cancel_payment$"),
+            ],
+            SEND_RECEIPT: [MessageHandler(filters.PHOTO, receive_receipt)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
+    )
+
+    # Admin: Tarif berish suhbati
+    admin_plan_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(give_plan_start, pattern="^admin_give_plan$")],
+        states={
+            GIVE_PLAN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_target_user)],
+            GIVE_PLAN_CHOOSE: [CallbackQueryHandler(receive_plan_choice, pattern="^setplan_")],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_message=False,
+    )
+
+    # Admin: Restore suhbati
+    restore_conv = ConversationHandler(
+        entry_points=[CommandHandler("restore", restore_start)],
+        states={
+            RESTORE_FILE: [MessageHandler(filters.Document.ALL, restore_file_received)],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_message=False,
+    )
+
+    # Buyruqlar
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("account", account_command))
+    app.add_handler(CommandHandler("admin", admin_start))
+    app.add_handler(CommandHandler("backup", backup_command))
+
+    # Suhbatlarni ulash
+    app.add_handler(task_conv)
+    app.add_handler(account_conv)
+    app.add_handler(admin_plan_conv)
+    app.add_handler(restore_conv)
+
+    # Callbacklar
+    app.add_handler(CallbackQueryHandler(account_command, pattern="^(open_account|refresh_account)$"))
+    app.add_handler(CallbackQueryHandler(admin_refresh, pattern="^admin_refresh$"))
+    app.add_handler(CallbackQueryHandler(admin_payment_decision, pattern="^pay_(ok|no)_"))
     app.add_handler(CallbackQueryHandler(list_tasks, pattern="^list_tasks$"))
     app.add_handler(CallbackQueryHandler(list_done, pattern="^list_done$"))
     app.add_handler(CallbackQueryHandler(complete_task_callback, pattern="^complete_"))
     app.add_handler(CallbackQueryHandler(delete_task_callback, pattern="^delete_"))
 
-    # Admin (Backup va Restore) handlerlari
-    app.add_handler(CommandHandler("backup", backup_command))
-
-    restore_conv = ConversationHandler(
-        entry_points=[CommandHandler("restore", restore_start)],
-        states={
-            RESTORE_FILE: [MessageHandler(filters.Document.ALL, restore_file_received)]
-        },
-        fallbacks=[CommandHandler("cancel", admin_cancel)],
-        per_message=False,
-    )
-    app.add_handler(restore_conv)
-
-    # Har daqiqada vazifalarni tekshirish (job_queue)
-    app.job_queue.run_repeating(check_tasks, interval=60, first=5)
-
-    logger.info("Rejachi bot ishga tushdi.")
-    app.run_polling(allowed_updates=["message", "callback_query"])
-
+    logging.info("Rejachi bot to'liq ishga tushdi.")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
