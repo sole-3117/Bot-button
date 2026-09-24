@@ -1,115 +1,109 @@
 import sqlite3
 from datetime import datetime
-from contextlib import contextmanager
 from config import DB_PATH
 
-
-def init_db():
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                task_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT,
-                due_datetime TEXT NOT NULL,
-                reminder_minutes_before INTEGER DEFAULT 0,
-                repeat_type TEXT DEFAULT 'none',
-                repeat_interval_days INTEGER,
-                status TEXT DEFAULT 'active',
-                notified_reminder INTEGER DEFAULT 0,
-                notified_due INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                completed_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-            )
-        """)
-        conn.commit()
-
-
-@contextmanager
-def get_conn():
+def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+    return conn
 
-
-def add_user(user_id: int, username: str, first_name: str):
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-            (user_id, username, first_name),
+def init_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Foydalanuvchilar jadvali (Tariflar va vaqt mintaqasi bilan)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            full_name TEXT,
+            plan TEXT DEFAULT 'free', -- 'free', 'pro', 'vip'
+            subscription_until TEXT,
+            timezone TEXT DEFAULT 'Asia/Tashkent',
+            created_at TEXT
         )
-        conn.commit()
-
-
-def add_task(user_id: int, title: str, due_datetime: str, reminder_minutes_before: int = 0,
-             repeat_type: str = "none", repeat_interval_days: int = None, description: str = None):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO tasks (user_id, title, description, due_datetime,
-               reminder_minutes_before, repeat_type, repeat_interval_days)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, title, description, due_datetime, reminder_minutes_before,
-             repeat_type, repeat_interval_days),
+    """)
+    
+    # Vazifalar jadvali (description mavjudligini ta'minlash)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_datetime TEXT NOT NULL,
+            reminder_minutes_before INTEGER DEFAULT 0,
+            repeat_type TEXT DEFAULT 'none',
+            repeat_interval_days INTEGER,
+            status TEXT DEFAULT 'active',
+            notified_reminder INTEGER DEFAULT 0,
+            notified_due INTEGER DEFAULT 0,
+            created_at TEXT
         )
-        conn.commit()
-        return cur.lastrowid
+    """)
+    conn.commit()
+    conn.close()
 
+# Foydalanuvchini ro'yxatga olish yoki yangilash
+def register_user(user_id: int, username: str, full_name: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO users (user_id, username, full_name, plan, created_at)
+        VALUES (?, ?, ?, 'free', ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            username=excluded.username,
+            full_name=excluded.full_name
+    """, (user_id, username, full_name, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
-def get_task(task_id: int):
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
-        return dict(row) if row else None
+def get_user(user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
+# Foydalanuvchi tarifini o'zgartirish (Admin uchun)
+def update_user_plan(user_id: int, plan: str, days: int = 30):
+    conn = get_connection()
+    cursor = conn.cursor()
+    from datetime import timedelta
+    until = (datetime.now() + timedelta(days=days)).isoformat()
+    cursor.execute("""
+        UPDATE users 
+        SET plan = ?, subscription_until = ?
+        WHERE user_id = ?
+    """, (plan, until, user_id))
+    conn.commit()
+    conn.close()
 
-def get_user_tasks(user_id: int, status: str = "active"):
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM tasks WHERE user_id = ? AND status = ? ORDER BY due_datetime ASC",
-            (user_id, status),
-        ).fetchall()
-        return [dict(r) for r in rows]
+# Foydalanuvchining faol vazifalari soni (Limitni tekshirish uchun)
+def count_active_tasks(user_id: int) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as total FROM tasks WHERE user_id = ? AND status = 'active'", (user_id,))
+    res = cursor.fetchone()
+    conn.close()
+    return res["total"] if res else 0
 
-
-def update_task(task_id: int, **fields):
-    if not fields:
-        return
-    set_clause = ", ".join(f"{k} = ?" for k in fields)
-    values = list(fields.values()) + [task_id]
-    with get_conn() as conn:
-        conn.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", values)
-        conn.commit()
-
-
-def delete_task(task_id: int):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
-        conn.commit()
-
-
-def complete_task(task_id: int):
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE tasks SET status = 'done', completed_at = ? WHERE task_id = ?",
-            (datetime.now().isoformat(), task_id),
-        )
-        conn.commit()
-
-
-def get_all_active_tasks():
-    with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM tasks WHERE status = 'active'").fetchall()
-        return [dict(r) for r in rows]
+# Admin uchun umumiy statistika
+def get_admin_stats():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as total_users FROM users")
+    total_users = cursor.fetchone()["total_users"]
+    
+    cursor.execute("SELECT plan, COUNT(*) as count FROM users GROUP BY plan")
+    plans = {row["plan"]: row["count"] for row in cursor.fetchall()}
+    
+    cursor.execute("SELECT COUNT(*) as total_tasks FROM tasks")
+    total_tasks = cursor.fetchone()["total_tasks"]
+    conn.close()
+    return {
+        "total_users": total_users,
+        "plans": plans,
+        "total_tasks": total_tasks
+    }
