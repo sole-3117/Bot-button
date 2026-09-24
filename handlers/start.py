@@ -16,7 +16,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"Assalomu alaykum, {user.first_name}! 👋\n\n"
         "Men sizga rejalaringizni tartibga solishda va eslatib turishda yordam beraman.\n"
-        "Quyidagi tugmalardan birini tanlang:"
+        "Quyidagi menyudan kerakli bo'limni tanlang:"
     )
     if update.callback_query:
         await update.callback_query.answer()
