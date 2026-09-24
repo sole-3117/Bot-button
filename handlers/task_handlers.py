@@ -17,14 +17,11 @@ async def safe_edit_message(query, text: str, reply_markup=None, parse_mode=None
         else:
             raise exc
 
-# ---------- Yangi vazifa yaratish ----------
-
 async def new_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
 
-    # Tarif cheklovini tekshirish
     user = db.get_user(user_id) or {"plan": "free"}
     plan_limit = PLANS.get(user.get("plan", "free"), PLANS["free"])["limit"]
     active_count = db.count_active_tasks(user_id)
@@ -32,8 +29,8 @@ async def new_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if active_count >= plan_limit:
         await safe_edit_message(
             query,
-            f"⚠️ Sizning tarfingizdagi ({user.get('plan', 'free').upper()}) vazifalar soni ({plan_limit} ta) to'lgan!\n\n"
-            "Ko'proq vazifa qo'shish uchun /account bo'limidan tarifingizni yangilang.",
+            f"⚠️ Sizning tarfingizdagi ({user.get('plan', 'free').upper()}) vazifalar limiti ({plan_limit} ta) to'ldi!\n\n"
+            "Cheklovni kengaytirish uchun /account bo'limiga kiring.",
             reply_markup=main_menu_keyboard()
         )
         return ConversationHandler.END
@@ -92,7 +89,7 @@ async def receive_date_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         context.user_data["date"] = datetime.strptime(text, "%d.%m.%Y")
     except ValueError:
-        await update.message.reply_text("❌ Noto'g'ri format. KK.OO.YYYY ko'rinishida kiriting:")
+        await update.message.reply_text("❌ Noto'g'ri format. KK.OO.YYYY formatida yozing:")
         return DATE_PICK
     return await prompt_time(update.message.reply_text)
 
@@ -131,7 +128,7 @@ async def receive_time_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         parsed_time = datetime.strptime(text, "%H:%M")
     except ValueError:
-        await update.message.reply_text("❌ Noto'g'ri vaqt. SS:DD formatida kiriting:")
+        await update.message.reply_text("❌ Noto'g'ri vaqt formati. SS:DD ko'rinishida yozing:")
         return TIME_PICK
 
     date_obj = context.user_data["date"]
@@ -168,7 +165,7 @@ async def receive_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["repeat_type"] = repeat_type
 
     if repeat_type == "custom":
-        await safe_edit_message(query, "🔢 Necha kunda bir marta takrorlansin? (son kiriting):")
+        await safe_edit_message(query, "🔢 Necha kunda bir marta takrorlansin? (musbat son yozing):")
         return CUSTOM_INTERVAL
 
     return await save_task(update, context)
@@ -198,7 +195,7 @@ async def save_task(update: Update, context: ContextTypes.DEFAULT_TYPE, from_mes
     due = datetime.fromisoformat(data["due_datetime"])
     desc_part = f"\n📄 Izoh: {data['description']}" if data.get("description") else ""
     text = (
-        f"✅ Vazifa muvaffaqiyatli yaratildi!\n\n"
+        f"✅ Vazifa muvaffaqiyatli saqlandi!\n\n"
         f"📌 Sarlavha: *{data['title']}*{desc_part}\n"
         f"📅 Muddat: {due.strftime('%d.%m.%Y %H:%M')}\n"
         f"🔔 Eslatma: {data.get('reminder_minutes', 0)} daqiqa oldin\n"
@@ -217,8 +214,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("❌ Bekor qilindi.", reply_markup=main_menu_keyboard())
     return ConversationHandler.END
-
-# ---------- Vazifalar ro'yxati ----------
 
 async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
