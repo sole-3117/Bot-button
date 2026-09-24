@@ -53,29 +53,26 @@ from handlers.admin import (
     give_plan_start,
     receive_target_user,
     receive_plan_choice,
-    backup_command,
-    restore_start,
-    restore_file_received,
     admin_cancel,
     GIVE_PLAN_USER,
     GIVE_PLAN_CHOOSE,
-    RESTORE_FILE,
 )
 from utils.scheduler import check_tasks
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 def main():
+    # PostgreSQL bazasini ishga tushiramiz
     db.init_db()
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Scheduler
+    # Scheduler (har daqiqada tekshiruv)
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_tasks, "interval", minutes=1, args=[app])
     scheduler.start()
 
-    # Yangi vazifa yaratish suhbati
+    # Yangi vazifa qo'shish jarayoni
     task_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_task_start, pattern="^new_task$")],
         states={
@@ -100,7 +97,7 @@ def main():
         per_message=False,
     )
 
-    # To'lov va Shaxsiy kabinet suhbati
+    # Shaxsiy kabinet / To'lov jarayoni
     account_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(buy_plan_start, pattern="^buy_plan$")],
         states={
@@ -114,7 +111,7 @@ def main():
         per_message=False,
     )
 
-    # Admin: Tarif berish suhbati
+    # Admin: Tarif berish jarayoni
     admin_plan_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(give_plan_start, pattern="^admin_give_plan$")],
         states={
@@ -125,27 +122,15 @@ def main():
         per_message=False,
     )
 
-    # Admin: Restore suhbati
-    restore_conv = ConversationHandler(
-        entry_points=[CommandHandler("restore", restore_start)],
-        states={
-            RESTORE_FILE: [MessageHandler(filters.Document.ALL, restore_file_received)],
-        },
-        fallbacks=[CommandHandler("cancel", admin_cancel)],
-        per_message=False,
-    )
-
-    # Buyruqlar
+    # Asosiy buyruqlar
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("account", account_command))
     app.add_handler(CommandHandler("admin", admin_start))
-    app.add_handler(CommandHandler("backup", backup_command))
 
-    # Suhbatlarni ulash
+    # Suhbatlarni ro'yxatdan o'tkazish
     app.add_handler(task_conv)
     app.add_handler(account_conv)
     app.add_handler(admin_plan_conv)
-    app.add_handler(restore_conv)
 
     # Callbacklar
     app.add_handler(CallbackQueryHandler(account_command, pattern="^(open_account|refresh_account)$"))
@@ -156,7 +141,7 @@ def main():
     app.add_handler(CallbackQueryHandler(complete_task_callback, pattern="^complete_"))
     app.add_handler(CallbackQueryHandler(delete_task_callback, pattern="^delete_"))
 
-    logging.info("Rejachi bot to'liq ishga tushdi.")
+    logging.info("Rejachi bot (dev) muvaffaqiyatli ishga tushdi.")
     app.run_polling()
 
 if __name__ == "__main__":
