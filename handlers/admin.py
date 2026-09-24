@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from config import ADMIN_IDS
+from config import ADMIN_IDS, DB_PATH
 import database as db
 
 GIVE_PLAN_USER, GIVE_PLAN_CHOOSE = range(2)
