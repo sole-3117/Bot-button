@@ -61,16 +61,33 @@ from utils.scheduler import check_tasks
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
+async def post_init(application):
+    """Event loop to'liq ishga tushgandan so'ng schedulerni start qiladi."""
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(check_tasks, "interval", minutes=1, args=[application])
+    scheduler.start()
+    application.bot_data["scheduler"] = scheduler
+    logging.info("AsyncIOScheduler muvaffaqiyatli ishga tushirildi.")
+
+async def post_shutdown(application):
+    """Bot to'xtaganda schedulerni ham toza yopadi."""
+    scheduler = application.bot_data.get("scheduler")
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
+        logging.info("AsyncIOScheduler to'xtatildi.")
+
 def main():
-    # PostgreSQL bazasini ishga tushiramiz
+    # PostgreSQL bazasini initsializatsiya qilish
     db.init_db()
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Scheduler (har daqiqada tekshiruv)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_tasks, "interval", minutes=1, args=[app])
-    scheduler.start()
+    # ApplicationBuilder ga post_init va post_shutdown hooklarini ulaymiz
+    app = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
 
     # Yangi vazifa qo'shish jarayoni
     task_conv = ConversationHandler(
