@@ -33,7 +33,10 @@ async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception:
+            pass
     else:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -45,10 +48,9 @@ async def buy_plan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💎 *Mavjud tariflar:*\n\n"
         "1️⃣ *Pro Rejachi* — 15,000 so'm / oy\n"
         "• 30 tagacha faol vazifalar\n"
-        "• Barcha qulay eslatmalar\n\n"
+        "• Qulay eslatmalar\n\n"
         "2️⃣ *VIP Cheksiz* — 30,000 so'm / oy\n"
-        "• Cheksiz vazifalar\n"
-        "• Birinchi navbatdagi qo'llab-quvvatlash\n\n"
+        "• Cheksiz vazifalar\n\n"
         "O'zingizga ma'qul tarifni tanlang:"
     )
     keyboard = [
@@ -71,7 +73,7 @@ async def plan_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💵 Summa: *{plan_info['price']:,} so'm*\n\n"
         f"Karta raqami: `{PAYMENT_CARD}`\n"
         f"Qabul qiluvchi: *{PAYMENT_OWNER}*\n\n"
-        "Iltimos, to'lovni amalga oshirib, **chek rasmini (skrinshot)** ushbu chatga yuboring:"
+        "Iltimos, to'lovni amalga oshirib, **chek rasmini (skrinshot)** yuboring:"
     )
     await query.edit_message_text(text, parse_mode="Markdown")
     return SEND_RECEIPT
@@ -83,12 +85,8 @@ async def receive_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     req_id = db.add_payment_request(user.id, plan_key, photo.file_id)
 
-    # Foydalanuvchiga javob
-    await update.message.reply_text(
-        "✅ To'lov cheki qabul qilindi!\nAdminlar tekshirib, 10-15 daqiqada tarifingizni faollashtiradi."
-    )
+    await update.message.reply_text("✅ To'lov cheki qabul qilindi! Admin tasdiqlashi bilan tarif faollashtiriladi.")
 
-    # Adminlarga yuborish
     admin_markup = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"pay_ok_{req_id}"),
@@ -120,7 +118,6 @@ async def cancel_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     return ConversationHandler.END
 
-# Admin tasdiqlash callbacki
 async def admin_payment_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -135,7 +132,7 @@ async def admin_payment_decision(update: Update, context: ContextTypes.DEFAULT_T
             try:
                 await context.bot.send_message(
                     chat_id=req["user_id"],
-                    text=f"🎉 Tabriklaymiz! To'lovingiz tasdiqlandi. *{PLANS[req['plan']]['name']}* tarifi 30 kunga faollashtirildi!",
+                    text=f"🎉 To'lovingiz tasdiqlandi! *{PLANS[req['plan']]['name']}* tarifi 30 kunga faollashtirildi!",
                     parse_mode="Markdown"
                 )
             except Exception:
