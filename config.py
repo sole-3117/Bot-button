@@ -1,38 +1,39 @@
+# config.py
 import os
-from datetime import timezone, timedelta
+from dotenv import load_dotenv
 
-DB_PATH = os.getenv("DB_PATH", "rejachi.db")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "SIZNING_BOT_TOKENINGIZ")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+load_dotenv()
 
-# Admin Telegram ID lari (vergul bilan ajratilgan)
-ADMIN_IDS = [int(i.strip()) for i in os.getenv("ADMIN_IDS", "123456789").split(",") if i.strip()]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_IDS = [123456789] # O'zingizning va shogirdingizning Telegram ID'lari
 
-# Toshkent vaqti (UTC+5)
-LOCAL_TZ = timezone(timedelta(hours=5))
+# API Kalitlar
+WHISPER_API_KEY = os.getenv("WHISPER_API_KEY")
+AI_API_KEY = os.getenv("AI_API_KEY")
+ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL")
+ESKIZ_PASSWORD = os.getenv("ESKIZ_PASSWORD")
 
-# To'lov ma'lumotlari
-PAYMENT_CARD = "8600 0000 0000 0000"
-PAYMENT_OWNER = "ISM FAMILIYA"
-
-# Tariflar
+# Tariflar va Limitlar (Siz bilan kelishilgan o'lchamlar)
 PLANS = {
-    "free": {"name": "Oddiy (Free)", "price": 0, "limit": 5},
-    "pro": {"name": "Pro Rejachi", "price": 15000, "limit": 30},
-    "vip": {"name": "VIP Cheksiz", "price": 30000, "limit": 999999},
-}
-
-REMINDER_OPTIONS = {
-    "5": 5,
-    "15": 15,
-    "30": 30,
-    "60": 60,
-}
-
-REPEAT_TYPES = {
-    "none": "Takrorlanmasin",
-    "daily": "Har kuni",
-    "weekly": "Har hafta",
-    "monthly": "Har oy",
-    "custom": "Boshqa oraliq",
+    "free": {
+        "price": 0,
+        "max_tasks": 5,
+        "max_voice": 0,
+        "max_sms": 3, # Bir martalik Welcome Bonus
+        "duration_days": 9999
+    },
+    "pro": {
+        "price": 15000,
+        "max_tasks": 50, # Sizga tekin bo'lgani uchun ko'p beramiz
+        "max_voice": 50,
+        "max_sms": 30,
+        "duration_days": 30
+    },
+    "vip": {
+        "price": 35000,
+        "max_tasks": 9999, # Cheksiz
+        "max_voice": 9999, # Cheksiz
+        "max_sms": 60,
+        "duration_days": 30
+    }
 }
