@@ -1,37 +1,26 @@
-# services/speech_to_text.py
 import os
-import tempfile
 from openai import AsyncOpenAI
-from config import WHISPER_API_KEY
 
-# OpenAI asinxron mijozi (API kaliti bilan)
-client = AsyncOpenAI(api_key=WHISPER_API_KEY)
+async def transcribe_voice(bot, file_id: str) -> str:
+    """Ovoz faylini matnga aylantiradi (Whisper orqali)"""
+    api_key = os.getenv("WHISPER_API_KEY") or os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OpenAI API kaliti (.env da WHISPER_API_KEY yoki OPENAI_API_KEY) kiritilmagan!")
 
-async def transcribe_voice(voice_file) -> str:
-    """
-    Telegramdan olingan ovozli faylni Whisper API orqali matnga o'giradi.
-    """
-    # Vaqtinchalik fayl yaratamiz (xotirani to'ldirib yubormaslik uchun)
-    # Telegram ovozli xabarlari odatda .ogg formatida bo'ladi
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
-        temp_file_path = temp_audio.name
+    client = AsyncOpenAI(api_key=api_key)
+
+    file = await bot.get_file(file_id)
+    file_path = f"/tmp/{file_id}.ogg"
+    await file.download_to_drive(custom_path=file_path)
 
     try:
-        # 1. Telegram serveridan audioni vaqtinchalik faylga yuklab olamiz
-        await voice_file.download_to_drive(custom_path=temp_file_path)
-        
-        # 2. Faylni ochib, Whisper API ga yuboramiz
-        with open(temp_file_path, "rb") as audio_data:
-            transcription = await client.audio.transcriptions.create(
+        with open(file_path, "rb") as audio_file:
+            transcript = await client.audio.transcriptions.create(
                 model="whisper-1",
-                file=audio_data,
-                language="uz" # O'zbek tilini majburiy ko'rsatamiz, bu aniqlikni oshiradi
+                file=audio_file,
+                language="uz"
             )
-            
-        # 3. Matnni qaytaramiz
-        return transcription.text
-
+        return transcript.text
     finally:
-        # 4. Jarayon tugagach yoki xato bo'lganda ham, vaqtinchalik faylni albatta o'chiramiz
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
