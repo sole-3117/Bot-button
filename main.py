@@ -58,20 +58,25 @@ from handlers.task_handlers import (
 from handlers.admin import (
     admin_start,
     admin_refresh,
+    admin_settings_menu,
+    setting_select,
+    receive_setting_value,
     give_plan_start,
     receive_target_user,
     receive_plan_choice,
     admin_cancel,
     GIVE_PLAN_USER,
     GIVE_PLAN_CHOOSE,
+    SETTING_VALUE,
 )
 from utils.scheduler import check_tasks
 
 # Loglashni sozlash
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
 )
+
 
 async def post_init(application):
     """Event loop to'liq ishga tushgandan so'ng schedulerni start qiladi."""
@@ -81,12 +86,14 @@ async def post_init(application):
     application.bot_data["scheduler"] = scheduler
     logging.info("⏱ AsyncIOScheduler muvaffaqiyatli ishga tushirildi.")
 
+
 async def post_shutdown(application):
     """Bot to'xtaganda schedulerni ham toza yopadi."""
     scheduler = application.bot_data.get("scheduler")
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
         logging.info("🛑 AsyncIOScheduler to'xtatildi.")
+
 
 def main():
     # PostgreSQL bazasini initsializatsiya qilish
@@ -165,6 +172,18 @@ def main():
         per_message=False,
     )
 
+    # Admin: Sozlamalarni o'zgartirish suhbati
+    admin_settings_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(setting_select, pattern="^set_")],
+        states={
+            SETTING_VALUE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_setting_value)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", admin_cancel)],
+        per_message=False,
+    )
+
     # -------------------------------------------------------------
     # 4. HANDLERLARNI BOTGA ULLASH
     # -------------------------------------------------------------
@@ -177,20 +196,33 @@ def main():
     app.add_handler(task_conv)
     app.add_handler(account_conv)
     app.add_handler(admin_plan_conv)
+    app.add_handler(admin_settings_conv)
 
     # Callbacklar (Tugmalar bosilganda)
-    app.add_handler(CallbackQueryHandler(account_command, pattern="^(open_account|refresh_account)$"))
+    app.add_handler(
+        CallbackQueryHandler(
+            account_command,
+            pattern="^(open_account|refresh_account)$",
+        )
+    )
     app.add_handler(CallbackQueryHandler(admin_refresh, pattern="^admin_refresh$"))
-    app.add_handler(CallbackQueryHandler(admin_payment_decision, pattern="^pay_(ok|no)_"))
+    app.add_handler(
+        CallbackQueryHandler(admin_settings_menu, pattern="^admin_settings$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(admin_payment_decision, pattern="^pay_(ok|no)_")
+    )
     app.add_handler(CallbackQueryHandler(list_tasks, pattern="^list_tasks$"))
     app.add_handler(CallbackQueryHandler(list_done, pattern="^list_done$"))
     app.add_handler(CallbackQueryHandler(complete_task_callback, pattern="^complete_"))
     app.add_handler(CallbackQueryHandler(delete_task_callback, pattern="^delete_"))
 
     logging.info("🚀 Rejachi bot (v2.3.1) muvaffaqiyatli ishga tushdi.")
-    
+
     # Botni kutish rejimida ishga tushirish
     app.run_polling()
 
+
 if __name__ == "__main__":
     main()
+
