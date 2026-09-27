@@ -30,6 +30,7 @@ async def safe_edit_message(query, text: str, reply_markup=None, parse_mode=None
 # ---------- Yangi vazifa yaratish ----------
 
 async def new_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yangi vazifa yaratishni boshlaydi"""
     query = update.callback_query
     await query.answer()
     await safe_edit_message(query, "📝 Vazifa nomini kiriting:")
@@ -37,6 +38,7 @@ async def new_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Vazifa nomini qabul qiladi"""
     context.user_data["title"] = update.message.text
     await update.message.reply_text(
         "📅 Sanani kiriting (KK.OO.YYYY, masalan 25.12.2026):"
@@ -45,38 +47,44 @@ async def receive_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sanani qabul qiladi va tekshiradi"""
     text = update.message.text.strip()
     try:
         parsed = datetime.strptime(text, "%d.%m.%Y")
         context.user_data["date"] = parsed
     except ValueError:
         await update.message.reply_text(
-            "❌ Sana notoʻgʻri. Iltimos, KK.OO.YYYY formatida kiriting (masalan 25.12.2026):"
+            "❌ Sana noto'g'ri. Iltimos, KK.OO.YYYY formatida kiriting (masalan 25.12.2026):"
         )
         return DATE
+    
     await update.message.reply_text("⏰ Vaqtni kiriting (SS:DD, masalan 14:30):")
     return TIME
 
 
 async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Vaqtni qabul qiladi va ISO formatidagi due_datetime yaratadi"""
     text = update.message.text.strip()
     try:
         parsed_time = datetime.strptime(text, "%H:%M")
     except ValueError:
         await update.message.reply_text(
-            "❌ Vaqt notoʻgʻri. Iltimos, SS:DD formatida kiriting (masalan 14:30):"
+            "❌ Vaqt noto'g'ri. Iltimos, SS:DD formatida kiriting (masalan 14:30):"
         )
         return TIME
 
+    # Sanani vaqt bilan birlashtirib ISO formatiga o'tkazamiz
     date_obj = context.user_data["date"]
-    due = date_obj.replace(hour=parsed_time.hour, minute=parsed_time.minute)
-    context.user_data["due_datetime"] = due.isoformat()
+    due = date_obj.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0)
+    context.user_data["due_datetime"] = due.strftime("%Y-%m-%dT%H:%M:%S")
 
+    # Eslatma vaqti
     keyboard = [
         [InlineKeyboardButton(f"{label} daqiqa oldin", callback_data=f"rem_{minutes}")]
         for label, minutes in REMINDER_OPTIONS.items()
     ]
     keyboard.append([InlineKeyboardButton("Eslatma kerak emas", callback_data="rem_0")])
+    
     await update.message.reply_text(
         "🔔 Qancha vaqt oldin eslatilsin?",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -85,11 +93,13 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Eslatma vaqtini qabul qiladi"""
     query = update.callback_query
     await query.answer()
     minutes = int(query.data.split("_")[1])
-    context.user_data["reminder_minutes"] = minutes
+    context.user_data["reminder_minutes_before"] = minutes
 
+    # Takrorlanish turi
     keyboard = [
         [InlineKeyboardButton(label, callback_data=f"rep_{key}")]
         for key, label in REPEAT_TYPES.items()
@@ -103,46 +113,56 @@ async def receive_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Takrorlanish turini qabul qiladi"""
     query = update.callback_query
     await query.answer()
     repeat_type = query.data.split("_")[1]
     context.user_data["repeat_type"] = repeat_type
 
     if repeat_type == "custom":
-        await safe_edit_message(query, "🔢 Necha kunda bir marta takrorlansin? (son kiriting):")
+        await safe_edit_message(
+            query, 
+            "🔢 Necha kunda bir marta takrorlansin? (son kiriting):"
+        )
         return CUSTOM_INTERVAL
 
     return await save_task(update, context)
 
 
 async def receive_custom_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Custom takrorlanish intervalini qabul qiladi"""
     text = update.message.text.strip()
     if not text.isdigit() or int(text) <= 0:
         await update.message.reply_text("❌ Iltimos, musbat son kiriting:")
         return CUSTOM_INTERVAL
+    
     context.user_data["repeat_interval_days"] = int(text)
     return await save_task(update, context, from_message=True)
 
 
 async def save_task(update: Update, context: ContextTypes.DEFAULT_TYPE, from_message: bool = False):
+    """Vazifani bazaga saqlaydi"""
     user_id = update.effective_user.id
     data = context.user_data
 
+    # Bazaga yozish
     task_id = db.add_task(
         user_id=user_id,
         title=data["title"],
         due_datetime=data["due_datetime"],
-        reminder_minutes_before=data.get("reminder_minutes", 0),
+        description="",
+        reminder_minutes_before=data.get("reminder_minutes_before", 0),
         repeat_type=data.get("repeat_type", "none"),
-        repeat_interval_days=data.get("repeat_interval_days"),
+        repeat_interval_days=data.get("repeat_interval_days")
     )
 
+    # Foydalanuvchiga javob
     due = datetime.fromisoformat(data["due_datetime"])
     text = (
         f"✅ Vazifa yaratildi!\n\n"
         f"📌 {data['title']}\n"
         f"📅 {due.strftime('%d.%m.%Y %H:%M')}\n"
-        f"🔔 Eslatma: {data.get('reminder_minutes', 0)} daqiqa oldin\n"
+        f"🔔 Eslatma: {data.get('reminder_minutes_before', 0)} daqiqa oldin\n"
         f"🔁 Takrorlanish: {REPEAT_TYPES.get(data.get('repeat_type', 'none'))}"
     )
 
@@ -156,14 +176,16 @@ async def save_task(update: Update, context: ContextTypes.DEFAULT_TYPE, from_mes
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Vazifa yaratishni bekor qiladi"""
     context.user_data.clear()
     await update.message.reply_text("❌ Bekor qilindi.", reply_markup=main_menu_keyboard())
     return ConversationHandler.END
 
 
-# ---------- Vazifalar roʻyxati ----------
+# ---------- Vazifalar ro'yxati ----------
 
 async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Faol vazifalar ro'yxatini ko'rsatadi"""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
@@ -172,14 +194,14 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not tasks:
         await safe_edit_message(
             query,
-            "📋 Faol vazifalar yoʻq.",
+            "📋 Faol vazifalar yo'q.",
             reply_markup=main_menu_keyboard(),
         )
         return
 
     await safe_edit_message(
         query,
-        "📋 *Faol vazifalar roʻyxati:*",
+        "📋 *Faol vazifalar ro'yxati:*",
         reply_markup=main_menu_keyboard(),
         parse_mode="Markdown",
     )
@@ -189,7 +211,7 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ Bajarildi", callback_data=f"complete_{task['task_id']}"),
-                InlineKeyboardButton("🗑 Oʻchirish", callback_data=f"delete_{task['task_id']}"),
+                InlineKeyboardButton("🗑 O'chirish", callback_data=f"delete_{task['task_id']}"),
             ]
         ])
         await context.bot.send_message(
@@ -200,6 +222,7 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def list_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bajarilgan vazifalar ro'yxatini ko'rsatadi"""
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
@@ -208,7 +231,7 @@ async def list_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not tasks:
         await safe_edit_message(
             query,
-            "✅ Bajarilgan vazifalar yoʻq.",
+            "✅ Bajarilgan vazifalar yo'q.",
             reply_markup=main_menu_keyboard(),
         )
         return
@@ -227,6 +250,7 @@ async def list_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def complete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Vazifani bajarilgan deb belgilaydi"""
     query = update.callback_query
     await query.answer("Vazifa bajarildi! ✅")
     task_id = int(query.data.split("_")[1])
@@ -235,8 +259,9 @@ async def complete_task_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def delete_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Vazifani o'chiradi"""
     query = update.callback_query
-    await query.answer("Oʻchirildi 🗑")
+    await query.answer("O'chirildi 🗑")
     task_id = int(query.data.split("_")[1])
     db.delete_task(task_id)
-    await safe_edit_message(query, "🗑 Vazifa oʻchirildi.")
+    await safe_edit_message(query, "🗑 Vazifa o'chirildi.")

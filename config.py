@@ -1,25 +1,26 @@
 import os
 from dotenv import load_dotenv
+import pytz
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DB_PATH = os.getenv("DB_PATH", "rejachi.db")
-TIMEZONE = os.getenv("TIMEZONE", "Asia/Tashkent")
+# Bot sozlamalari
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+MAIN_ADMIN = int(os.getenv("MAIN_ADMIN", 0)) if os.getenv("MAIN_ADMIN") else None
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/bot_db")
+LOCAL_TZ = pytz.timezone(os.getenv("LOCAL_TZ", "Asia/Tashkent"))
 
-# Oldindan eslatish variantlari (daqiqalarda)
+# Reminder va Repeat variantlari
 REMINDER_OPTIONS = {
     "5": 5,
     "15": 15,
     "30": 30,
-    "60": 60,
+    "1 soat": 60,
 }
 
-# Takrorlanish turlari
 REPEAT_TYPES = {
-    "none": "Takrorlanmasin",
+    "none": "Takrorlanmaydi",
     "daily": "Har kuni",
     "weekly": "Har hafta",
-    "monthly": "Har oy",
-    "custom": "Maxsus interval",
+    "custom": "Custom interval",
 }

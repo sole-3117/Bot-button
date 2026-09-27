@@ -10,6 +10,7 @@ from telegram.ext import (
 
 from config import BOT_TOKEN
 import database as db
+from middlewares.error_handler import global_error_handler
 from utils.scheduler import check_tasks
 from handlers.start import start, menu_callback
 from handlers.task_handlers import (
@@ -44,15 +45,21 @@ def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN topilmadi. .env faylida BOT_TOKEN ni belgilang.")
 
+    # Bazani initsializatsiya qilish
     db.init_db()
+    logger.info("Database initsializatsiyalandi")
 
+    # ApplicationBuilder
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Global error handler
+    app.add_error_handler(global_error_handler)
 
     # /start
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu$"))
 
-    # Yangi vazifa yaratish (conversation)
+    # Yangi vazifa yaratish (conversation handler)
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_task_start, pattern="^new_task$")],
         states={
@@ -67,16 +74,16 @@ def main():
     )
     app.add_handler(conv_handler)
 
-    # Vazifalar roʻyxati
+    # Vazifalar ro'yxati
     app.add_handler(CallbackQueryHandler(list_tasks, pattern="^list_tasks$"))
     app.add_handler(CallbackQueryHandler(list_done, pattern="^list_done$"))
     app.add_handler(CallbackQueryHandler(complete_task_callback, pattern="^complete_"))
     app.add_handler(CallbackQueryHandler(delete_task_callback, pattern="^delete_"))
 
-    # Har daqiqada vazifalarni tekshirish (job_queue)
+    # Har daqiqada vazifalarni tekshirish
     app.job_queue.run_repeating(check_tasks, interval=60, first=5)
 
-    logger.info("Rejachi bot ishga tushdi.")
+    logger.info("Bot ishga tushdi va polling boshlanmoqda...")
     app.run_polling(allowed_updates=["message", "callback_query"])
 
 
