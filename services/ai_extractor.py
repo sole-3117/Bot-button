@@ -1,48 +1,51 @@
+import os
 import json
-import logging
-from datetime import datetime
-from openai import AsyncOpenAI
-from config import AI_API_KEY, LOCAL_TZ
+from datetime import datetime, timedelta
+import pytz
+from openai import OpenAI
 
-logger = logging.getLogger(__name__)
-client = AsyncOpenAI(api_key=AI_API_KEY)
+LOCAL_TZ = pytz.timezone(os.getenv("LOCAL_TZ", "Asia/Tashkent"))
 
-async def extract_task_json(raw_text: str) -> dict:
+def extract_task_json(raw_text: str) -> dict:
+    """Matndan vazifa parametrlarini ajratib oladi (GPT-4o-mini orqali)"""
+    api_key = os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    client = OpenAI(api_key=api_key)
     now = datetime.now(LOCAL_TZ)
-    current_context = (
-        f"Bugungi sana: {now.strftime('%Y-%m-%d')}. "
-        f"Hozirgi vaqt: {now.strftime('%H:%M')}. "
-        f"Hafta kuni: {now.strftime('%A')}."
-    )
+    current_date = now.strftime("%Y-%m-%d")
+    current_time = now.strftime("%H:%M")
+    tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
     system_prompt = f"""
-    Siz vazifalarni tahlil qiluvchi yordamchisiz.
-    Foydalanuvchining o'zbek tilidagi matnidan quyidagi ma'lumotlarni ajratib, faqat toza JSON formatida qaytaring:
-    - "title": Vazifa sarlavhasi.
-    - "date": YYYY-MM-DD formati.
-    - "time": HH:MM formati (agar aytilmagan bo'lsa null).
-    - "description": Qo'shimcha izohlar.
-
-    {current_context}
-    Hech qanday tushuntirishsiz faqat JSON qaytaring.
-    """
+Sen Telegram eslatuvchi bot uchun yordamchisan. Hozirgi sana: {current_date}, vaqt: {current_time}.
+Foydalanuvchi matnini tahlil qilib, faqat JSON formatida qaytar:
+{{
+    "title": "Vazifa nomi (qisqa)",
+    "description": "Batafsil izoh yoki bo'sh string",
+    "due_datetime": "YYYY-MM-DDTHH:MM:SS",
+    "reminder_minutes_before": 15,
+    "repeat_type": "none"
+}}
+Agar sana/vaqt aytilmagan bo'lsa, {tomorrow}T09:00:00 ni belgilang.
+Faqat toza JSON qaytar.
+"""
 
     try:
-        response = await client.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": raw_text}
             ],
-            temperature=0,
-            response_format={"type": "json_object"}
+            temperature=0.2
         )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        logger.error(f"AI Extraction xatosi: {e}")
-        return {
-            "title": raw_text[:50],
-            "date": now.strftime("%Y-%m-%d"),
-            "time": None,
-            "description": raw_text
-        }
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```json"):
+            content = content[7:-3].strip()
+        elif content.startswith("```"):
+            content = content[3:-3].strip()
+        return json.loads(content)
+    except Exception:
+        return None
